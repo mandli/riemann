@@ -1,4 +1,5 @@
 c-----------------------------------------------------------------------
+cDIR$ ATTRIBUTES OFFLOAD:mic :: riemann_aug_JCP
       subroutine riemann_aug_JCP(maxiter,meqn,mwaves,hL,hR,huL,huR,
      &   hvL,hvR,bL,bR,uL,uR,vL,vR,phiL,phiR,sE1,sE2,drytol,g,sw,fw)
 
@@ -50,7 +51,7 @@ c-----------------------------------------------------------------------
       delphi = phiR-phiL
       delb = bR-bL
       delnorm = delh**2 + delphi**2
-
+cDIR$ ATTRIBUTES OFFLOAD:mic :: riemanntype
       call riemanntype(hL,hR,uL,uR,hm,s1m,s2m,rare1,rare2,
      &                                          1,drytol,g)
 
@@ -264,6 +265,7 @@ c        !solve for beta(k) using Cramers Rule=================
 
 
 c-----------------------------------------------------------------------
+cDIR$ ATTRIBUTES OFFLOAD:mic :: riemann_ssqfwave
       subroutine riemann_ssqfwave(maxiter,meqn,mwaves,hL,hR,huL,huR,
      &    hvL,hvR,bL,bR,uL,uR,vL,vR,phiL,phiR,sE1,sE2,drytol,g,sw,fw)
 
@@ -449,6 +451,7 @@ c               hustar=huL+alpha1*sE1
 
 
 c-----------------------------------------------------------------------
+cDIR$ ATTRIBUTES OFFLOAD:mic :: riemann_fwave
       subroutine riemann_fwave(meqn,mwaves,hL,hR,huL,huR,hvL,hvR,
      &            bL,bR,uL,uR,vL,vR,phiL,phiR,s1,s2,drytol,g,sw,fw)
 
@@ -511,6 +514,7 @@ c-----------------------------------------------------------------------
 
 
 c=============================================================================
+cDIR$ ATTRIBUTES OFFLOAD:mic :: riemanntype
       subroutine riemanntype(hL,hR,uL,uR,hm,s1m,s2m,rare1,rare2,
      &             maxiter,drytol,g)
 

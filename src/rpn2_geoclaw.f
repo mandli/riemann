@@ -1,4 +1,5 @@
 c======================================================================
+cDIR$ ATTRIBUTES OFFLOAD:mic :: rpn2
        subroutine rpn2(ixy,maxm,meqn,mwaves,maux,mbc,mx,
      &                 ql,qr,auxl,auxr,fwave,s,amdq,apdq)
 c======================================================================
@@ -33,7 +34,8 @@ c
 !           David George, Vancouver WA, Feb. 2009                           !
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-      use geoclaw_module, only: g => grav, drytol => dry_tolerance
+      use geoclaw_module, only: g => grav
+      use geoclaw_module, only: drytol => dry_tolerance
       use geoclaw_module, only: earth_radius, deg2rad
       use amr_module, only: mcapa
 
@@ -65,6 +67,10 @@ c
 
       logical rare1,rare2
 
+      !amdq = 0.d0
+      !apdq = 0.d0
+      !s = 0.d0
+      !fwave = 0.d0
       !loop through Riemann problems at each grid cell
       do i=2-mbc,mx+mbc
 
@@ -151,6 +157,7 @@ c        !set normal direction
          wall(2) = 1.d0
          wall(3) = 1.d0
          if (hR.le.drytol) then
+cDIR$ ATTRIBUTES OFFLOAD:mic :: riemanntype
             call riemanntype(hL,hL,uL,-uL,hstar,s1m,s2m,
      &                                  rare1,rare2,1,drytol,g)
             hstartest=max(hL,hstar)
@@ -168,6 +175,7 @@ c                bR=hstartest+bL
                bR=hL+bL
             endif
          elseif (hL.le.drytol) then ! right surface is lower than left topo
+cDIR$ ATTRIBUTES OFFLOAD:mic :: riemanntype 
             call riemanntype(hR,hR,-uR,uR,hstar,s1m,s2m,
      &                                  rare1,rare2,1,drytol,g)
             hstartest=max(hR,hstar)
@@ -202,7 +210,7 @@ c               bL=hstartest+bR
          !solve Riemann problem.
 
          maxiter = 1
-
+cDIR$ ATTRIBUTES OFFLOAD:mic :: riemann_aug_JCP
          call riemann_aug_JCP(maxiter,3,3,hL,hR,huL,
      &        huR,hvL,hvR,bL,bR,uL,uR,vL,vR,phiL,phiR,sE1,sE2,
      &                                    drytol,g,sw,fw)
