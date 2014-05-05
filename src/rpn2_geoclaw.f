@@ -37,6 +37,9 @@ c
       use geoclaw_module, only: earth_radius, deg2rad
       use amr_module, only: mcapa
 
+      ! Temporary until `deep_depth` is moved
+      use refinement_module, only: deep_depth
+
       implicit none
 
       !input
@@ -62,6 +65,8 @@ c
       double precision s1m,s2m
       double precision hstar,hstartest,hstarHLL,sLtest,sRtest
       double precision tw,dxdc
+
+      real(kind=8) :: cL, cR, beta(3)
 
       logical rare1,rare2
 
@@ -120,90 +125,137 @@ c        !set normal direction
          hvL=qr(nv,i-1) 
          hvR=ql(nv,i)
 
-         !check for wet/dry boundary
-         if (hR.gt.drytol) then
-            uR=huR/hR
-            vR=hvR/hR
-            phiR = 0.5d0*g*hR**2 + huR**2/hR
-         else
-            hR = 0.d0
-            huR = 0.d0
-            hvR = 0.d0
-            uR = 0.d0
-            vR = 0.d0
-            phiR = 0.d0
-         endif
 
-         if (hL.gt.drytol) then
-            uL=huL/hL
-            vL=hvL/hL
-            phiL = 0.5d0*g*hL**2 + huL**2/hL
-         else
-            hL=0.d0
-            huL=0.d0
-            hvL=0.d0
-            uL=0.d0
-            vL=0.d0
-            phiL = 0.d0
-         endif
 
-         wall(1) = 1.d0
-         wall(2) = 1.d0
-         wall(3) = 1.d0
-         if (hR.le.drytol) then
-            call riemanntype(hL,hL,uL,-uL,hstar,s1m,s2m,
+         ! Support for linear Riemann solver
+         if (hR > deep_depth .and. hL > deep_depth) then
+C           print *,"deep water Riemann problem, i=",i,mu,nv
+          ! In deep water region, use linear solver
+          ! Note that we have no problem with dry-states in this case
+          ! since we require that both cells are in "deep water"
+          uL = huL / hL
+          uR = huR / hR
+          vL = hvL / hL
+          vR = hvR / hR
+          cL = sqrt(g * hL)
+          cR = sqrt(g * hR)
+C           print *, uL, uR
+C           print *, vL, vR
+C           print *, cL, cR
+
+          beta(1) = (huR - huL - (uR + cR) * (hR - hL)) 
+     &                              / ((uL - cL) - (uR + cR))
+          beta(3) = (hR - hL) - beta(1)
+          beta(2) = (hvR - hvL) - beta(1) * vL - beta(3) * vR
+
+          s(1,i) = uL - cL
+          fwave(1,1,i) = 1.0d0 * beta(1)
+          fwave(mu,1,i) = s(1,i) * beta(1)
+          fwave(nv,1,i) = vL * beta(1)
+
+          s(2,i) = uL
+          fwave(1,2,i) = 0.0d0
+          fwave(mu,2,i) = 0.0d0
+          fwave(nv,2,i) = 1.0d0 * beta(2)
+
+          s(3,i) = uR + cR
+          fwave(1,3,i) = 1.0d0 * beta(3)
+          fwave(mu,3,i) = s(3,i) * beta(3)
+          fwave(nv,3,i) = vR * beta(3)
+
+C           print *, "+++++++"
+C C           print *, (fwave(1,m,i), m=1,3), s(1,i)
+C           print *, (fwave(2,m,i), m=1,3), s(2,i)
+C           print *, (fwave(3,m,i), m=1,3), s(3,i)
+
+C           print *,"linear solver completed"
+
+         else
+           ! In shallow area, use full non-linear solver
+           !check for wet/dry boundary
+           if (hR.gt.drytol) then
+              uR=huR/hR
+              vR=hvR/hR
+              phiR = 0.5d0*g*hR**2 + huR**2/hR
+           else
+              hR = 0.d0
+              huR = 0.d0
+              hvR = 0.d0
+              uR = 0.d0
+              vR = 0.d0
+              phiR = 0.d0
+           endif
+
+           if (hL.gt.drytol) then
+              uL=huL/hL
+              vL=hvL/hL
+              phiL = 0.5d0*g*hL**2 + huL**2/hL
+           else
+              hL=0.d0
+              huL=0.d0
+              hvL=0.d0
+              uL=0.d0
+              vL=0.d0
+              phiL = 0.d0
+           endif
+
+           wall(1) = 1.d0
+           wall(2) = 1.d0
+           wall(3) = 1.d0
+           if (hR.le.drytol) then
+              call riemanntype(hL,hL,uL,-uL,hstar,s1m,s2m,
      &                                  rare1,rare2,1,drytol,g)
-            hstartest=max(hL,hstar)
-            if (hstartest+bL.lt.bR) then !right state should become ghost values that mirror left for wall problem
+              hstartest=max(hL,hstar)
+              if (hstartest+bL.lt.bR) then !right state should become ghost values that mirror left for wall problem
 c                bR=hstartest+bL
-               wall(2)=0.d0
-               wall(3)=0.d0
-               hR=hL
-               huR=-huL
-               bR=bL
-               phiR=phiL
-               uR=-uL
-               vR=vL
-            elseif (hL+bL.lt.bR) then
-               bR=hL+bL
-            endif
-         elseif (hL.le.drytol) then ! right surface is lower than left topo
-            call riemanntype(hR,hR,-uR,uR,hstar,s1m,s2m,
+                 wall(2)=0.d0
+                 wall(3)=0.d0
+                 hR=hL
+                 huR=-huL
+                 bR=bL
+                 phiR=phiL
+                 uR=-uL
+                 vR=vL
+              elseif (hL+bL.lt.bR) then
+                 bR=hL+bL
+              endif
+           elseif (hL.le.drytol) then ! right surface is lower than left topo
+              call riemanntype(hR,hR,-uR,uR,hstar,s1m,s2m,
      &                                  rare1,rare2,1,drytol,g)
-            hstartest=max(hR,hstar)
-            if (hstartest+bR.lt.bL) then  !left state should become ghost values that mirror right
-c               bL=hstartest+bR
-               wall(1)=0.d0
-               wall(2)=0.d0
-               hL=hR
-               huL=-huR
-               bL=bR
-               phiL=phiR
-               uL=-uR
-               vL=vR
-            elseif (hR+bR.lt.bL) then
-               bL=hR+bR
-            endif
-         endif
+              hstartest=max(hR,hstar)
+              if (hstartest+bR.lt.bL) then  !left state should become ghost values that mirror right
+c                 bL=hstartest+bR
+                 wall(1)=0.d0
+                 wall(2)=0.d0
+                 hL=hR
+                 huL=-huR
+                 bL=bR
+                 phiL=phiR
+                 uL=-uR
+                 vL=vR
+              elseif (hR+bR.lt.bL) then
+                 bL=hR+bR
+              endif
+           endif
 
-         !determine wave speeds
-         sL=uL-sqrt(g*hL) ! 1 wave speed of left state
-         sR=uR+sqrt(g*hR) ! 2 wave speed of right state
+           !determine wave speeds
+           sL=uL-sqrt(g*hL) ! 1 wave speed of left state
+           sR=uR+sqrt(g*hR) ! 2 wave speed of right state
 
-         uhat=(sqrt(g*hL)*uL + sqrt(g*hR)*uR)/(sqrt(g*hR)+sqrt(g*hL)) ! Roe average
-         chat=sqrt(g*0.5d0*(hR+hL)) ! Roe average
-         sRoe1=uhat-chat ! Roe wave speed 1 wave
-         sRoe2=uhat+chat ! Roe wave speed 2 wave
+           uhat=(sqrt(g*hL)*uL + sqrt(g*hR)*uR)/(sqrt(g*hR)+sqrt(g*hL)) ! Roe average
+           chat=sqrt(g*0.5d0*(hR+hL)) ! Roe average
+           sRoe1=uhat-chat ! Roe wave speed 1 wave
+           sRoe2=uhat+chat ! Roe wave speed 2 wave
 
-         sE1 = min(sL,sRoe1) ! Eindfeldt speed 1 wave
-         sE2 = max(sR,sRoe2) ! Eindfeldt speed 2 wave
+           sE1 = min(sL,sRoe1) ! Eindfeldt speed 1 wave
+           sE2 = max(sR,sRoe2) ! Eindfeldt speed 2 wave
 
-         !--------------------end initializing...finally----------
-         !solve Riemann problem.
+           !--------------------end initializing...finally----------
+           !solve Riemann problem.
 
-         maxiter = 1
+           maxiter = 1
 
-         call riemann_aug_JCP(maxiter,3,3,hL,hR,huL,
+           call riemann_aug_JCP(maxiter,3,3,hL,hR,huL,
      &        huR,hvL,hvR,bL,bR,uL,uR,vL,vR,phiL,phiR,sE1,sE2,
      &                                    drytol,g,sw,fw)
 
@@ -214,22 +266,25 @@ c          call riemann_fwave(meqn,mwaves,hL,hR,huL,huR,hvL,hvR,
 c     &      bL,bR,uL,uR,vL,vR,phiL,phiR,sE1,sE2,drytol,g,sw,fw)
 
 c        !eliminate ghost fluxes for wall
-         do mw=1,3
-            sw(mw)=sw(mw)*wall(mw)
+           do mw=1,3
+              sw(mw)=sw(mw)*wall(mw)
 
-               fw(1,mw)=fw(1,mw)*wall(mw) 
-               fw(2,mw)=fw(2,mw)*wall(mw)
-               fw(3,mw)=fw(3,mw)*wall(mw)
-         enddo
+                 fw(1,mw)=fw(1,mw)*wall(mw) 
+                 fw(2,mw)=fw(2,mw)*wall(mw)
+                 fw(3,mw)=fw(3,mw)*wall(mw)
+           enddo
 
-         do mw=1,mwaves
-            s(mw,i)=sw(mw)
-            fwave(1,mw,i)=fw(1,mw)
-            fwave(mu,mw,i)=fw(2,mw)
-            fwave(nv,mw,i)=fw(3,mw)
-!            write(51,515) sw(mw),fw(1,mw),fw(2,mw),fw(3,mw)
-!515         format("++sw",4e25.16)
-         enddo
+             do mw=1,mwaves
+                s(mw,i)=sw(mw)
+                fwave(1,mw,i)=fw(1,mw)
+                fwave(mu,mw,i)=fw(2,mw)
+                fwave(nv,mw,i)=fw(3,mw)
+    !            write(51,515) sw(mw),fw(1,mw),fw(2,mw),fw(3,mw)
+    !515         format("++sw",4e25.16)
+             enddo
+
+          ! End of Linear vs. Non-Linear Riemann solve branch
+          end if
 
  30      continue
       enddo
