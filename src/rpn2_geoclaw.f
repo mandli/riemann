@@ -66,7 +66,7 @@ c
       double precision hstar,hstartest,hstarHLL,sLtest,sRtest
       double precision tw,dxdc
 
-      real(kind=8) :: cL, cR, beta(3)
+      real(kind=8) :: cL, cR, beta(3), delta(3)
 
       logical rare1,rare2
 
@@ -125,52 +125,6 @@ c        !set normal direction
          hvL=qr(nv,i-1) 
          hvR=ql(nv,i)
 
-
-
-         ! Support for linear Riemann solver
-         if (hR > deep_depth .and. hL > deep_depth) then
-C           print *,"deep water Riemann problem, i=",i,mu,nv
-          ! In deep water region, use linear solver
-          ! Note that we have no problem with dry-states in this case
-          ! since we require that both cells are in "deep water"
-          uL = huL / hL
-          uR = huR / hR
-          vL = hvL / hL
-          vR = hvR / hR
-          cL = sqrt(g * hL)
-          cR = sqrt(g * hR)
-C           print *, uL, uR
-C           print *, vL, vR
-C           print *, cL, cR
-
-          beta(1) = (huR - huL - (uR + cR) * (hR - hL)) 
-     &                              / ((uL - cL) - (uR + cR))
-          beta(3) = (hR - hL) - beta(1)
-          beta(2) = (hvR - hvL) - beta(1) * vL - beta(3) * vR
-
-          s(1,i) = uL - cL
-          fwave(1,1,i) = 1.0d0 * beta(1)
-          fwave(mu,1,i) = s(1,i) * beta(1)
-          fwave(nv,1,i) = vL * beta(1)
-
-          s(2,i) = uL
-          fwave(1,2,i) = 0.0d0
-          fwave(mu,2,i) = 0.0d0
-          fwave(nv,2,i) = 1.0d0 * beta(2)
-
-          s(3,i) = uR + cR
-          fwave(1,3,i) = 1.0d0 * beta(3)
-          fwave(mu,3,i) = s(3,i) * beta(3)
-          fwave(nv,3,i) = vR * beta(3)
-
-C           print *, "+++++++"
-C C           print *, (fwave(1,m,i), m=1,3), s(1,i)
-C           print *, (fwave(2,m,i), m=1,3), s(2,i)
-C           print *, (fwave(3,m,i), m=1,3), s(3,i)
-
-C           print *,"linear solver completed"
-
-         else
            ! In shallow area, use full non-linear solver
            !check for wet/dry boundary
            if (hR.gt.drytol) then
@@ -255,15 +209,22 @@ c                 bL=hstartest+bR
 
            maxiter = 1
 
+
+         ! Support for linear Riemann solver
+         if (hR > deep_depth .and. hL > deep_depth) then
+         call riemann_fwave(meqn,mwaves,hL,hR,huL,huR,hvL,hvR,
+     &      bL,bR,uL,uR,vL,vR,phiL,phiR,sE1,sE2,drytol,g,sw,fw)
+        else
+
            call riemann_aug_JCP(maxiter,3,3,hL,hR,huL,
      &        huR,hvL,hvR,bL,bR,uL,uR,vL,vR,phiL,phiR,sE1,sE2,
      &                                    drytol,g,sw,fw)
 
+        end if
 c         call riemann_ssqfwave(maxiter,meqn,mwaves,hL,hR,huL,huR,
 c     &     hvL,hvR,bL,bR,uL,uR,vL,vR,phiL,phiR,sE1,sE2,drytol,g,sw,fw)
 
-c          call riemann_fwave(meqn,mwaves,hL,hR,huL,huR,hvL,hvR,
-c     &      bL,bR,uL,uR,vL,vR,phiL,phiR,sE1,sE2,drytol,g,sw,fw)
+
 
 c        !eliminate ghost fluxes for wall
            do mw=1,3
@@ -274,7 +235,7 @@ c        !eliminate ghost fluxes for wall
                  fw(3,mw)=fw(3,mw)*wall(mw)
            enddo
 
-             do mw=1,mwaves
+            do mw=1,mwaves
                 s(mw,i)=sw(mw)
                 fwave(1,mw,i)=fw(1,mw)
                 fwave(mu,mw,i)=fw(2,mw)
@@ -282,9 +243,6 @@ c        !eliminate ghost fluxes for wall
     !            write(51,515) sw(mw),fw(1,mw),fw(2,mw),fw(3,mw)
     !515         format("++sw",4e25.16)
              enddo
-
-          ! End of Linear vs. Non-Linear Riemann solve branch
-          end if
 
  30      continue
       enddo
