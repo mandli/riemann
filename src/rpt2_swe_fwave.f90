@@ -1,4 +1,5 @@
-subroutine rpt2(ixy, imp, maxm, meqn, mwaves, maux, mbc, mx, ql, qr, aux1, aux2, aux3, asdq, bmasdq, bpasdq)
+subroutine rpt2(ixy, imp, maxm, meqn, mwaves, maux, mbc, mx, ql, qr,           &
+                aux1, aux2, aux3, asdq, bmasdq, bpasdq)
 
     use geoclaw_module, only: g => grav, dry_tolerance
 !     use geoclaw_module, only: coordinate_system,earth_radius,deg2rad
@@ -8,14 +9,14 @@ subroutine rpt2(ixy, imp, maxm, meqn, mwaves, maux, mbc, mx, ql, qr, aux1, aux2,
     ! Arguments
     integer, intent(in) :: ixy, maxm, meqn, maux, mwaves, mbc, mx, imp
 
-    real(kind=8), intent(in) :: ql(meqn,1-mbc:maxm+mbc)
-    real(kind=8), intent(in) :: qr(meqn,1-mbc:maxm+mbc)
-    real(kind=8), intent(in) :: asdq(meqn,1-mbc:maxm+mbc)
-    real(kind=8), intent(in) :: aux1(maux,1-mbc:maxm+mbc)
-    real(kind=8), intent(in) :: aux2(maux,1-mbc:maxm+mbc)
-    real(kind=8), intent(in) :: aux3(maux,1-mbc:maxm+mbc)
-    real(kind=8), intent(in out) :: bmasdq(meqn,1-mbc:maxm+mbc)
-    real(kind=8), intent(in out) :: bpasdq(meqn,1-mbc:maxm+mbc)
+    real(kind=8), intent(in) :: ql(meqn, 1-mbc:maxm+mbc)
+    real(kind=8), intent(in) :: qr(meqn, 1-mbc:maxm+mbc)
+    real(kind=8), intent(in) :: asdq(meqn, 1-mbc:maxm+mbc)
+    real(kind=8), intent(in) :: aux1(maux, 1-mbc:maxm+mbc)
+    real(kind=8), intent(in) :: aux2(maux, 1-mbc:maxm+mbc)
+    real(kind=8), intent(in) :: aux3(maux, 1-mbc:maxm+mbc)
+    real(kind=8), intent(in out) :: bmasdq(meqn, 1-mbc:maxm+mbc)
+    real(kind=8), intent(in out) :: bpasdq(meqn, 1-mbc:maxm+mbc)
 
     ! Locals
     integer :: i, normal_index, transverse_index, mw
@@ -45,6 +46,7 @@ subroutine rpt2(ixy, imp, maxm, meqn, mwaves, maux, mbc, mx, ql, qr, aux1, aux2,
 
         ! Extract states from correct side of edge
         if (imp == 1) then
+            ! Left splitting
             h = qr(1, i - 1)
             hu = qr(normal_index, i - 1)
             hv = qr(transverse_index, i - 1)
@@ -52,6 +54,7 @@ subroutine rpt2(ixy, imp, maxm, meqn, mwaves, maux, mbc, mx, ql, qr, aux1, aux2,
             b(2) = aux2(1, i - 1)
             b(1) = aux1(1, i - 1)
         else
+            ! Right splitting
             h = ql(1, i)
             hu = ql(normal_index, i)
             hv = ql(transverse_index, i)
@@ -68,23 +71,20 @@ subroutine rpt2(ixy, imp, maxm, meqn, mwaves, maux, mbc, mx, ql, qr, aux1, aux2,
             v = hv / h
         end if
 
-        ! If both transverse cells are higher than eta, skip this solve as well
+        ! If both transverse cells are higher than eta, skip this splitting
         if (h + b(2) < b(1) .and. h + b(2) < b(3)) then
             cycle
         end if
 
         ! Determine wave speeds
         s(1) = v - sqrt(g * h)
-        s(2) = v
+        s(2) = u
         s(3) = v + sqrt(g * h)
 
         ! Calculate asdq decomposition
         delta(1) = asdq(1, i)
         delta(2) = asdq(normal_index, i)
         delta(3) = asdq(transverse_index, i)
-        if (s(3) < 1e-3 .and. s(1) < 1e-3) then
-            print *, h
-        end if
         beta(1) = s(3) * delta(1) / (s(3) - s(1)) - delta(3) / (s(3) - s(1))
         beta(2) = -s(2) * delta(1) + delta(2)
         beta(3) = delta(3) / (s(3) - s(1)) - s(1) * delta(1) / (s(3) - s(1))
@@ -94,22 +94,25 @@ subroutine rpt2(ixy, imp, maxm, meqn, mwaves, maux, mbc, mx, ql, qr, aux1, aux2,
         r(2, :) = [s(2), 1.d0, s(2)]
         r(3, :) = [s(1), 0.d0, s(3)]
 
+        beta(3) = s(1) * delta(1) / (delta(3) - s(3) + s(1))
+        beta(1) = (delta(3) - s(3) * beta(3)) / s(1)
+        beta(2) = -(s(2) * beta(1) + s(2) * beta(3) - delta(2))
+
         ! Computate fluctuations
         do mw = 1, mwaves
             if (s(mw) < 0.d0 .and. h + b(2) >= b(1)) then
                 bmasdq(1, i) = bmasdq(1, i) + s(mw) * beta(mw) * r(1, mw)
                 bmasdq(normal_index, i) = bmasdq(normal_index, i)           &
-                                        + s(mw) * beta(mw) * r(normal_index, mw)
+                                        + s(mw) * beta(mw) * r(2, mw)
                 bmasdq(transverse_index, i) = bmasdq(transverse_index, i)   &
-                                    + s(mw) * beta(mw) * r(transverse_index, mw)
+                                    + s(mw) * beta(mw) * r(3, mw)
             else if (s(mw) > 0.d0 .and. h + b(2) >= b(3)) then
                 bpasdq(1, i) = bpasdq(1, i) + s(mw) * beta(mw) * r(1, mw)
                 bpasdq(normal_index, i) = bpasdq(normal_index, i)           &
-                                        + s(mw) * beta(mw) * r(normal_index, mw)
+                                        + s(mw) * beta(mw) * r(2, mw)
                 bpasdq(transverse_index, i) = bpasdq(transverse_index, i)   &
-                                    + s(mw) * beta(mw) * r(transverse_index, mw)
+                                    + s(mw) * beta(mw) * r(3, mw)
 !             else
-!                 ! Split difference?
 !                 bmasdq(1, i) = bmasdq(1, i) + 0.5d0 * s(mw) * beta(mw) * r(1, mw)
 !                 bmasdq(normal_index, i) = bmasdq(normal_index, i)           &
 !                                         + 0.5d0 * s(mw) * beta(mw) * r(normal_index, mw)
