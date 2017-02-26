@@ -32,8 +32,8 @@ subroutine rpn2(ixy, maxm, meqn, mwaves, maux, mbc, mx, ql, qr, auxl, auxr,    &
     !           David George, Vancouver WA, Feb. 2009                          !
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-    use geoclaw_module, only: g => grav, drytol => dry_tolerance
-    use geoclaw_module, only: earth_radius, deg2rad
+    use geoclaw_module, only: g => grav, dry_tolerance
+    use geoclaw_module, only: earth_radius, deg2rad, max_iterations
     use amr_module, only: mcapa
 
     implicit none
@@ -58,19 +58,17 @@ subroutine rpn2(ixy, maxm, meqn, mwaves, maux, mbc, mx, ql, qr, auxl, auxr,    &
     real(kind=8) :: wall_mask(3)
     real(kind=8) :: fwave_local(3, 3), s_local(3)
 
-    integer, parameter :: MAX_ITER
-
     ! State
     real(kind=8) :: h_R, h_L, hu_R, hu_L, u_R, u_L, hv_R, hv_L, v_R, v_L
     real(kind=8) :: phi_R, phi_L, b_R, b_L
     real(kind=8) :: h_star, h_star_test, h_star_HLL, s_L_test, s_R_test
 
     ! Riemann problem locals
-    real(kind=8) :: s_L, s_R, s_Roe(2), s_einfeldt(2), u_hat, c_hat
+    real(kind=8) :: s_L, s_R, s_Roe(2), s_E(2), u_hat, c_hat
     logical :: rare(2)
 
-    real(kind=8) :: tw, dxdc
-    double precision s1m,s2m
+    real(kind=8) :: dxdc
+    real(kind=8) :: s_m(2)
 
     ! Initialize output
     amdq = 0.d0
@@ -80,11 +78,11 @@ subroutine rpn2(ixy, maxm, meqn, mwaves, maux, mbc, mx, ql, qr, auxl, auxr,    &
     
     ! Set normal direction
     if (ixy == 1) then
-        n_index = 2
-        t_index = 3
+        normal_index = 2
+        transverse_index = 3
     else
-        n_index = 3
-        t_index = 2
+        normal_index = 3
+        transverse_index = 2
     endif
 
     ! Inform of bad Riemann problem
@@ -120,10 +118,10 @@ subroutine rpn2(ixy, maxm, meqn, mwaves, maux, mbc, mx, ql, qr, auxl, auxr,    &
         ! Extract states for this Reimann problem
         h_L = qr(1, i - 1)
         h_R = ql(1, i)
-        hu_L = qr(n_index, i - 1)
-        hu_R = ql(n_index, i)
-        hv_L = qr(t_index, i - 1)
-        hv_R = ql(t_index, i)
+        hu_L = qr(normal_index, i - 1)
+        hu_R = ql(normal_index, i)
+        hv_L = qr(transverse_index, i - 1)
+        hv_R = ql(transverse_index, i)
 
         b_L = auxr(1, i - 1)
         b_R = auxl(1, i)
@@ -219,7 +217,14 @@ subroutine rpn2(ixy, maxm, meqn, mwaves, maux, mbc, mx, ql, qr, auxl, auxr,    &
         s_E(2) = max(s_R, s_Roe(2))
 
         ! Call specific Riemann solver
-        call riemann_solver_func(MAX_ITER, 3, 3, h_L, h_R, hu_L, hu_R,        &
+        ! call riemann_solver_func(MAX_ITER, 3, 3, h_L, h_R, hu_L, hu_R,        &
+        !                                          hv_L, hv_R, b_l, b_R,        &
+        !                                          u_L, u_R, v_L, v_R,          &
+        !                                          phi_L, phi_R,                &
+        !                                          s_E(1), s_E(2),              &
+        !                                          dry_tolerance, g,            &
+        !                                          s_local, fwave_local)
+        call riemann_aug_JCP(max_iterations, 3, 3, h_L, h_R, hu_L, hu_R,      &
                                                  hv_L, hv_R, b_l, b_R,        &
                                                  u_L, u_R, v_L, v_R,          &
                                                  phi_L, phi_R,                &
@@ -228,16 +233,16 @@ subroutine rpn2(ixy, maxm, meqn, mwaves, maux, mbc, mx, ql, qr, auxl, auxr,    &
                                                  s_local, fwave_local)
 
         ! Eliminate ghost fluxes for wall
-        s_local = s_local * wall
-        fwave_local(1, :) = fwave_local(1, :) * wall
-        fwave_local(2, :) = fwave_local(2, :) * wall
-        fwave_local(3, :) = fwave_local(3, :) * wall
+        s_local = s_local * wall_mask
+        fwave_local(1, :) = fwave_local(1, :) * wall_mask
+        fwave_local(2, :) = fwave_local(2, :) * wall_mask
+        fwave_local(3, :) = fwave_local(3, :) * wall_mask
 
         ! Store new waves and speeds in actuall output
         s(:, i) = s_local
         fwave(1, :, i) = fwave_local(1, :)
-        fwave(normal_index, :, i) = fwave_local(normal_index, :)
-        fwave(transverse_index, :, i) = fwave_local(transverse_index, :)
+        fwave(normal_index, :, i) = fwave_local(2, :)
+        fwave(transverse_index, :, i) = fwave_local(3, :)
 
     end do
     ! == End of Riemann Solver Loop per grid cell ==============================
@@ -249,17 +254,13 @@ subroutine rpn2(ixy, maxm, meqn, mwaves, maux, mbc, mx, ql, qr, auxl, auxr,    &
             dxdc = earth_radius * deg2rad
             do i = 2 - mbc, mx + mbc
                 s(:, i) = dxdc * s(:, i)
-                fwave(1, :, i) = dxdc * fwave(1, :, i)
-                fwave(2, :, i) = dxdc * fwave(2, :, i)
-                fwave(3, :, i) = dxdc * fwave(3, :, i)
+                fwave(:, :, i) = dxdc * fwave(:, :, i)
             end do
         else
             do i = 2 - mbc, mx + mbc
                 dxdc = earth_radius * cos(auxl(3, i)) * deg2rad
                 s(:, i) = dxdc * s(:, i)
-                fwave(1, :, i) = dxdc * fwave(1, :, i)
-                fwave(2, :, i) = dxdc * fwave(2, :, i)
-                fwave(3, :, i) = dxdc * fwave(3, :, i)
+                fwave(:, :, i) = dxdc * fwave(:, :, i)
             end do
         end if
     end if
