@@ -82,8 +82,6 @@ subroutine rpn2(ixy,maxm,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,ap
     real(kind=8), dimension(num_layers) :: h_hat_l, h_hat_r
     real(kind=8) :: b_l, b_r, flux_transfer_l, flux_transfer_r, lambda(6)
 
-    ! real(kind=8) :: advected_speed, eta_l, eta_r, gamma_l, gamma_r, kappa_l, kappa_r, w_normal, w_transverse
-
     ! Solver variables
     integer :: num_dry_states
     real(kind=8), dimension(num_layers) :: eigen_h_l, eigen_h_r
@@ -237,7 +235,22 @@ subroutine rpn2(ixy,maxm,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,ap
             call solve_single_layer_rp(layer_index, h_l, h_r, hu_l, hu_r,      &
                                                     hv_l, hv_r, b_l, b_r,      &
                                                     fw, sw)
-
+            if (any(fw > 1d-12)) then
+                print *, "dry states: ", dry_state_l, dry_state_r
+                print *, "        left            |             right"
+                print *, "====================================================="
+                print "(2d16.8)", h_l(1), h_r(1)
+                print "(2d16.8)", hu_l(1), hu_r(1)
+                print "(2d16.8)", hv_l(1), hv_r(1)
+                print "(2d16.8)", h_l(2), h_r(2)
+                print "(2d16.8)", hu_l(2), hu_r(2)
+                print "(2d16.8)", hv_l(2), hv_r(2)
+                print "(2d16.8)", b_l, b_r
+                print *, " "
+                print "(3d16.8)", (fw(j, :), j=1,3)
+                print "(3d16.8)", sw
+                stop
+            end if
             ! Update speeds and waves
             ! Note that we represent all the waves in the first three arrays
             ! so it does not directly correspond to the two-layer case's wave
@@ -270,6 +283,8 @@ subroutine rpn2(ixy,maxm,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,ap
         !     *inundation_method* is used.
         ! ======================================================================
         else
+            stop "Should not see a two-layer problem here"
+
             ! By default fill in the eigen and flux evaluation states with their
             ! side values
             if (eigen_method == 1) then
@@ -301,9 +316,21 @@ subroutine rpn2(ixy,maxm,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,ap
             momentum_transfer = 0.d0
 
             ! ==================================================================
+            !  All-states are wet - (F F F F)
+            if (num_dry_states == 0) then
+
+                ! Nothing to do for eigenspace evaluation
+
+                ! Flux evaulation
+                momentum_transfer(1) =  g * rho(1) * h_ave(1) * (h_r(2) - h_l(2) + b_r - b_l)
+                momentum_transfer(2) = -g * rho(1) * h_ave(1) * (h_r(2) - h_l(2)) + g * rho(2) * h_ave(2) * (b_r - b_l)
+                flux_transfer_r = g * rho(1) * h_r(1) * h_r(2)
+                flux_transfer_l = g * rho(1) * h_l(1) * h_l(2)
+
+            ! ==================================================================
             !  Right state is completely dry - (F F T T)
-            if (.not. dry_state_l(1) .and. .not. dry_state_l(2) .and.          &
-                      dry_state_r(1) .and.       dry_state_r(2)) then
+            else if (.not. dry_state_l(1) .and. .not. dry_state_l(2) .and.     &
+                           dry_state_r(1) .and.       dry_state_r(2)) then
     
                 ! Inundation occurs
                 inundation = sum(h_l) + b_l > b_r
@@ -448,20 +475,6 @@ subroutine rpn2(ixy,maxm,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,ap
                     momentum_transfer(2) = 0.d0
 
                 end if
-
-            ! ==================================================================
-            !  All-states are wet - (F F F F)
-!             else if (.not. dry_state_l(1) .and. .not. dry_state_l(2) .and.     &
-!                      .not. dry_state_r(1) .and. .not. dry_state_r(2)) then
-            else if (num_dry_states == 0) then
-
-                ! Nothing to do for eigenspace evaluation
-
-                ! Flux evaulation
-                momentum_transfer(1) =  g * rho(1) * h_ave(1) * (h_r(2) - h_l(2) + b_r - b_l)
-                momentum_transfer(2) = -g * rho(1) * h_ave(1) * (h_r(2) - h_l(2)) + g * rho(2) * h_ave(2) * (b_r - b_l)
-                flux_transfer_r = g * rho(1) * h_r(1) * h_r(2)
-                flux_transfer_l = g * rho(1) * h_l(1) * h_l(2)
 
             ! ==================================================================
             !  We do not yet handle this case - F F F F and F F F F 
@@ -868,6 +881,24 @@ subroutine solve_single_layer_rp(layer_index, h_l, h_r, hu_l, hu_r, hv_l, hv_r, 
             phiL = 0.d0
          endif
 
+         if (uL < 1e-14) then
+            huL = 0.d0
+            uL = 0.d0
+         end if
+         if (uR < 1e-14) then
+            huR = 0.d0
+            uR = 0.d0
+        end if
+
+         if (vL < 1e-14) then
+            hvL = 0.d0
+            vL = 0.d0
+         end if
+         if (vR < 1e-14) then
+            hvR = 0.d0
+            vR = 0.d0
+        end if
+
          wall(1) = 1.d0
          wall(2) = 1.d0
          wall(3) = 1.d0
@@ -922,14 +953,14 @@ subroutine solve_single_layer_rp(layer_index, h_l, h_r, hu_l, hu_r, hv_l, hv_r, 
 
          maxiter = 1
 
-         call riemann_aug_JCP(maxiter,3,3,hL,hR,huL,huR,hvL,hvR,bL,bR,uL,uR, &
-                                          vL,vR,phiL,phiR,sE1,sE2,drytol,g,sw,fw)
+         ! call riemann_aug_JCP(maxiter,3,3,hL,hR,huL,huR,hvL,hvR,bL,bR,uL,uR, &
+         !                                  vL,vR,phiL,phiR,sE1,sE2,drytol,g,sw,fw)
 
 !         call riemann_ssqfwave(maxiter,meqn,mwaves,hL,hR,huL,huR,
 !     &     hvL,hvR,bL,bR,uL,uR,vL,vR,phiL,phiR,sE1,sE2,drytol,g,sw,fw)
 
-!          call riemann_fwave(meqn,mwaves,hL,hR,huL,huR,hvL,hvR,
-!     &      bL,bR,uL,uR,vL,vR,phiL,phiR,sE1,sE2,drytol,g,sw,fw)
+         call riemann_fwave(3,3,hL,hR,huL,huR,hvL,hvR,bL,bR,uL,uR, &
+                                         vL,vR,phiL,phiR,sE1,sE2,drytol,g,sw,fw)
 
 !        !eliminate ghost fluxes for wall
          do mw=1,3
