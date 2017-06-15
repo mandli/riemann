@@ -33,7 +33,7 @@ c
 !           David George, Vancouver WA, Feb. 2009                           !
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-      use geoclaw_module, only: g => grav, drytol => dry_tolerance, rho
+      use geoclaw_module, only: g => grav, dry_tolerance, rho
       use geoclaw_module, only: earth_radius, deg2rad
       use amr_module, only: mcapa
 
@@ -63,13 +63,16 @@ c
       double precision bR,bL,sL,sR,sRoe1,sRoe2,sE1,sE2,uhat,chat
       double precision s1m,s2m
       double precision hstar,hstartest,hstarHLL,sLtest,sRtest
-      double precision tw,dxdc
+      double precision tw,dxdc,drytol
 
       logical rare1,rare2
 
       ! In case there is no pressure forcing
       pL = 0.d0
       pR = 0.d0
+
+      ! Alias
+      drytol = dry_tolerance(1)
 
       !loop through Riemann problems at each grid cell
       do i=2-mbc,mx+mbc

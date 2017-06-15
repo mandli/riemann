@@ -649,159 +649,17 @@ subroutine rpn2(ixy,maxm,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,ap
         do mw=1,mwaves
             if (s(mw,i) > 0.d0) then
                 apdq(:,i) = apdq(:,i) + fwave(:,mw,i)
-            else
+            else if (s(mw, i) < 0.d0) then
                 amdq(:,i) = amdq(:,i) + fwave(:,mw,i)
+            else
+                apdq(:,i) = apdq(:,i) + 0.5d0 * fwave(:,mw,i)
+                amdq(:,i) = amdq(:,i) + 0.5d0 * fwave(:,mw,i)
             endif
-            !h_r(1) = ql(1,i) / rho(1)
-            !h_l(1) = qr(1,i-1) / rho(1)
-            !h_r(2) = ql(4,i) / rho(2)
-            !h_l(2) = qr(4,i-1) / rho(2)
-            !dry_state_r(2) = h_r(2) < dry_tolerance(2)
-            !dry_state_l(2) = h_l(2) < dry_tolerance(2)
-            !rare(1) = h_l(2) + b_l > b_r
-            !rare(2) = h_r(2) + b_r > b_l
-            !if (dry_state_r(2).and.(.not.dry_state_l(2)).and.(.not.rare(1)) &
-            ! .or.(dry_state_l(2).and.(.not.dry_state_r(2)).and.(.not.rare(2)))) then
-            !    do m=4,6
-            !        if (abs(apdq(m,i)) <= 1.d-8) then
-            !            print *,"========================"
-            !            print *,"Wave ",mw," equation ",m
-            !            print *,"s = ",s(mw,i)
-            !            print *,"f = ",fwave(m,mw,i)
-            !            print *,"amdq = ",(amdq(m,i))
-            !            print *,"apdq = ",(apdq(m,i))
-            !            stop "Fluctuation apdq non-zero going into a wall, aborting calculation."
-            !        endif
-            !    enddo
-            !    apdq(4:6,i) = 0.d0
-            !endif
         enddo
     enddo
 
 end subroutine rpn2
 
-
-! ==================================
-!  Solve the single-layer equations
-! ==================================
-! subroutine solve_sinlge_layer_rp(layer_index, h_l, h_r,                        &
-!                                               hu_l, hu_r,                      &
-!                                               hv_l, hv_r,                      &
-!                                               u_l, u_r,                        &
-!                                               v_l, v_r,                        &
-!                                               b_l, b_r,                        &
-!                                               fw, sw)
-
-!     use geoclaw_module, only: g => grav
-!     use multilayer_module, only: dry_tolerance
-
-!     implicit none
-
-!     ! Input
-!     integer, intent(in) :: layer_index
-!     real(kind=8), intent(in out), dimension(2) :: h_l, h_r
-!     real(kind=8), intent(in out), dimension(2) :: hu_l, hu_r
-!     real(kind=8), intent(in out), dimension(2) :: hv_l, hv_r
-!     real(kind=8), intent(in out), dimension(2) :: u_r, u_l
-!     real(kind=8), intent(in out), dimension(2) :: v_r, v_l
-!     real(kind=8), intent(in out) :: b_l, b_r
-
-!     ! Output
-!     real(kind=8), intent(out) :: fw(3, 3), sw(3)
-
-!     ! Local storage
-!     integer :: m, mw
-!     logical :: rare(2)
-!     real(kind=8) :: wall(3), h_star, h_star_test, sm(2)
-!     real(kind=8) :: phi_l, phi_r, s_l, s_r, u_hat, c_hat, s_roe(2), s_E(2)
-
-!     ! Algorithm parameters
-!     integer, parameter :: MAX_ITERATIONS = 1
-
-!     wall = 1.d0
-    
-!     ! Calculate momentum fluxes
-!     phi_l = 0.5d0 * g * h_l(layer_index)**2      &
-!                         + h_l(layer_index) * u_l(layer_index)**2
-!     phi_r = 0.5d0 * g * h_r(layer_index)**2      &
-!                         + h_r(layer_index) * u_r(layer_index)**2
-     
-!     ! Check for dry state to right
-!     if (h_r(layer_index) < dry_tolerance(layer_index)) then
-!         call riemanntype(h_l(layer_index), h_l(layer_index),   &
-!                          u_l(layer_index),-u_l(layer_index),   &
-!                          h_star, sm(1), sm(2), rare(1), rare(2), 1,    &
-!                          dry_tolerance(layer_index), g)
-!         h_star_test = max(h_l(layer_index), h_star)
-!         ! Right state should become ghost values that mirror left for wall problem
-!         if (h_star_test + b_l < b_r) then 
-!             wall(2:3) = 0.d0
-!             h_r(layer_index) = h_l(layer_index)
-!             hu_r(layer_index) = -hu_l(layer_index)
-!             b_r = b_l
-!             phi_r = phi_l
-!             u_r(layer_index) = -u_l(layer_index)
-!             v_r(layer_index) = v_l(layer_index)
-!         else if (h_l(layer_index) + b_l < b_r) then
-!             b_r = h_l(layer_index) + b_l
-!         endif
-!     ! Check for drystate to left, i.e right surface is lower than left topo
-!     else if (h_l(layer_index) < dry_tolerance(layer_index)) then 
-!         call riemanntype(h_r(layer_index), h_r(layer_index),   &
-!                         -u_r(layer_index), u_r(layer_index),   &
-!                          h_star, sm(1), sm(2), rare(1), rare(2), 1,    &
-!                          dry_tolerance(layer_index), g)
-!         h_star_test = max(h_r(layer_index), h_star)
-!         ! Left state should become ghost values that mirror right
-!         if (h_star_test + b_r < b_l) then  
-!            wall(1:2) = 0.d0
-!            h_l(layer_index) = h_r(layer_index)
-!            hu_l(layer_index) = -hu_r(layer_index)
-!            b_l = b_r
-!            phi_l = phi_r
-!            u_l(layer_index) = -u_r(layer_index)
-!            v_l(layer_index) = v_r(layer_index)
-!         else if (h_r(layer_index) + b_r < b_l) then
-!            b_l = h_r(layer_index) + b_r
-!         endif
-!     endif
-
-!     ! Determine wave speeds
-!     ! 1 wave speed of left state
-!     s_l = u_l(layer_index) - sqrt(g * h_l(layer_index))
-!     ! 2 wave speed of right state
-!     s_r = u_r(layer_index) + sqrt(g * h_r(layer_index))
-    
-!     ! Roe average
-!     u_hat = (sqrt(g * h_l(layer_index)) * u_l(layer_index)     &
-!            + sqrt(g * h_r(layer_index)) * u_r(layer_index))    &
-!            / (sqrt(g * h_r(layer_index)) + sqrt(g * h_l(layer_index))) 
-!     c_hat = sqrt(g * 0.5d0 * (h_r(layer_index) + h_l(layer_index))) 
-!     s_roe(1) = u_hat - c_hat ! Roe wave speed 1 wave
-!     s_roe(2) = u_hat + c_hat ! Roe wave speed 2 wave
-!     s_E(1) = min(s_l, s_roe(1)) ! Eindfeldt speed 1 wave
-!     s_E(2) = max(s_r, s_roe(2)) ! Eindfeldt speed 2 wave
-    
-!     ! Solve Riemann problem
-!     call riemann_aug_JCP(MAX_ITERATIONS, 3, 3,                         &
-!                          h_l(layer_index), h_r(layer_index),   &
-!                          hu_l(layer_index), hu_r(layer_index), &
-!                          hv_l(layer_index), hv_r(layer_index), &
-!                          b_l, b_r,                                     &
-!                          u_l(layer_index), u_r(layer_index),   &
-!                          v_l(layer_index), v_r(layer_index),   &
-!                          phi_l, phi_r, s_E(1), s_E(2),           &
-!                          dry_tolerance(layer_index), g, sw, fw)
-    
-!     ! Eliminate ghost fluxes for wall
-!     do mw=1,3
-!         sw(mw) = sw(mw) * wall(mw)
-!         do m=1,3
-!            fw(m, mw) = fw(m, mw) * wall(mw)
-!         enddo
-!     enddo
-
-! end subroutine solve_sinlge_layer_rp
 
 subroutine solve_single_layer_rp(layer_index, h_l, h_r, hu_l, hu_r, hv_l, hv_r, b_l, b_r, fw, sw)
 
