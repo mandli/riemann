@@ -52,7 +52,7 @@ subroutine rpn2(ixy,maxm,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,ap
     use geoclaw_module, only: g => grav, rho, pi, earth_radius
 
     use multilayer_module, only: num_layers, eigen_func
-    use multilayer_module, only: dry_tolerance, aux_layer_index, r
+    use multilayer_module, only: dry_tolerance, layer_index, r
     use multilayer_module, only: eigen_method, inundation_method
     use multilayer_module, only: eigen_func, inundation_eigen_func
 
@@ -70,7 +70,7 @@ subroutine rpn2(ixy,maxm,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,ap
 
     ! Counters
     integer :: i, j, mw, info
-    integer :: n_index, t_index, layer_index
+    integer :: n_index, t_index, layer
     
     ! Physics
     real(kind=8) :: dxdc
@@ -103,12 +103,12 @@ subroutine rpn2(ixy,maxm,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,ap
     external dgesv
 
     interface
-        subroutine solve_single_layer_rp(layer_index, h_l, h_r, hu_l, hu_r, hv_l, hv_r, b_l, b_r, fw, sw)
+        subroutine solve_single_layer_rp(layer, h_l, h_r, hu_l, hu_r, hv_l, hv_r, b_l, b_r, fw, sw)
             use geoclaw_module, only: g => grav
             use multilayer_module, only: dry_tolerance
             implicit none
             ! Input
-            integer, intent(in) :: layer_index
+            integer, intent(in) :: layer
             real(kind=8), intent(in), dimension(2) :: h_l, h_r, hu_l, hu_r, hv_l, hv_r
             real(kind=8), intent(in) :: b_l, b_r
             ! Output
@@ -142,17 +142,17 @@ subroutine rpn2(ixy,maxm,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,ap
         ! could actually be the x or y-directions depending on ixy
         
         do j=1,2
-            layer_index = 3*(j-1)
-            h_l(j) = qr(layer_index+1,i-1) / rho(j)
-            hu_l(j) = qr(layer_index+n_index,i-1) / rho(j)
-            hv_l(j) = qr(layer_index+t_index,i-1) / rho(j)
+            layer = 3*(j-1)
+            h_l(j) = qr(layer+1,i-1) / rho(j)
+            hu_l(j) = qr(layer+n_index,i-1) / rho(j)
+            hv_l(j) = qr(layer+t_index,i-1) / rho(j)
             
-            h_r(j) = ql(layer_index+1,i) / rho(j)
-            hu_r(j) = ql(layer_index+n_index,i) / rho(j)
-            hv_r(j) = ql(layer_index+t_index,i) / rho(j)
+            h_r(j) = ql(layer+1,i) / rho(j)
+            hu_r(j) = ql(layer+n_index,i) / rho(j)
+            hv_r(j) = ql(layer+t_index,i) / rho(j)
             
-            h_hat_l(j) = auxr(j+aux_layer_index-1,i-1)
-            h_hat_r(j) = auxl(j+aux_layer_index-1,i)
+            h_hat_l(j) = auxr(j+layer_index-1,i-1)
+            h_hat_r(j) = auxl(j+layer_index-1,i)
             
             h_ave(:) = 0.5d0 * (h_l(:) + h_r(:))
             
@@ -216,9 +216,9 @@ subroutine rpn2(ixy,maxm,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,ap
             ! Set wet layer index so that we can handle both the bottom and top
             ! layers being dry while the other is wet
             if (.not.dry_state_l(1) .or. .not.dry_state_r(1)) then
-                layer_index = 1
+                layer = 1
             else if (.not.dry_state_l(2) .or. .not. dry_state_r(2)) then
-                layer_index = 2
+                layer = 2
             else
                 print *, "Invalid dry layer state reached."
                 print *, "dry states: ", dry_state_l, dry_state_r
@@ -234,7 +234,7 @@ subroutine rpn2(ixy,maxm,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,ap
                 stop
             end if
 
-            call solve_single_layer_rp(layer_index, h_l, h_r, hu_l, hu_r,      &
+            call solve_single_layer_rp(layer, h_l, h_r, hu_l, hu_r,      &
                                                     hv_l, hv_r, b_l, b_r,      &
                                                     fw, sw)
 
@@ -245,16 +245,16 @@ subroutine rpn2(ixy,maxm,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,ap
             s(:, i) = 0.d0
             fwave(:, :, i) = 0.d0
             
-            if (layer_index == 1) then
+            if (layer == 1) then
                 s(1:3, i) = sw(:)
-                fwave(1, 1:3, i) = fw(1, :) * rho(layer_index)
-                fwave(n_index, 1:3, i) = fw(2, :) * rho(layer_index)
-                fwave(t_index, 1:3, i) = fw(3, :) * rho(layer_index)
+                fwave(1, 1:3, i) = fw(1, :) * rho(layer)
+                fwave(n_index, 1:3, i) = fw(2, :) * rho(layer)
+                fwave(t_index, 1:3, i) = fw(3, :) * rho(layer)
             else
                 s(4:6, i) = sw(:)
-                fwave(1, 4:6, i) = fw(1, :) * rho(layer_index)
-                fwave(n_index, 4:6, i) = fw(2, :) * rho(layer_index)
-                fwave(t_index, 4:6, i) = fw(3, :) * rho(layer_index)
+                fwave(1, 4:6, i) = fw(1, :) * rho(layer)
+                fwave(n_index, 4:6, i) = fw(2, :) * rho(layer)
+                fwave(t_index, 4:6, i) = fw(3, :) * rho(layer)
             end if
 
             ! Go on to next cell, lat-long and fluctuation calculations are 
@@ -558,14 +558,14 @@ subroutine rpn2(ixy,maxm,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,ap
             !  Compute flux differences
             ! ======================================================================
             do j=1,2
-                layer_index = 3*(j-1)
-                flux_r(layer_index+1) = rho(j) * flux_hu_r(j)
-                flux_r(layer_index+n_index) = rho(j) * (flux_h_r(j) * flux_u_r(j)**2 + 0.5d0 * g * flux_h_r(j)**2)
-                flux_r(layer_index+t_index) = rho(j) * flux_h_r(j) * flux_u_r(j) * flux_v_r(j)
+                layer = 3*(j-1)
+                flux_r(layer+1) = rho(j) * flux_hu_r(j)
+                flux_r(layer+n_index) = rho(j) * (flux_h_r(j) * flux_u_r(j)**2 + 0.5d0 * g * flux_h_r(j)**2)
+                flux_r(layer+t_index) = rho(j) * flux_h_r(j) * flux_u_r(j) * flux_v_r(j)
                 
-                flux_l(layer_index+1) = rho(j) * flux_hu_l(j)
-                flux_l(layer_index+n_index) = rho(j) * (flux_h_l(j) * flux_u_l(j)**2 + 0.5d0 * g * flux_h_l(j)**2)
-                flux_l(layer_index+t_index) = rho(j) * flux_h_l(j) * flux_u_l(j) * flux_v_l(j)
+                flux_l(layer+1) = rho(j) * flux_hu_l(j)
+                flux_l(layer+n_index) = rho(j) * (flux_h_l(j) * flux_u_l(j)**2 + 0.5d0 * g * flux_h_l(j)**2)
+                flux_l(layer+t_index) = rho(j) * flux_h_l(j) * flux_u_l(j) * flux_v_l(j)
             enddo
             ! Add extra flux terms
             flux_r(3 + n_index) = flux_r(3 + n_index) + flux_transfer_r
@@ -803,7 +803,7 @@ end subroutine rpn2
 
 ! end subroutine solve_sinlge_layer_rp
 
-subroutine solve_single_layer_rp(layer_index, h_l, h_r, hu_l, hu_r, hv_l, hv_r, b_l, b_r, fw, sw)
+subroutine solve_single_layer_rp(layer, h_l, h_r, hu_l, hu_r, hv_l, hv_r, b_l, b_r, fw, sw)
 
     use geoclaw_module, only: g => grav
     use multilayer_module, only: dry_tolerance
@@ -811,7 +811,7 @@ subroutine solve_single_layer_rp(layer_index, h_l, h_r, hu_l, hu_r, hv_l, hv_r, 
     implicit none
 
     ! Input
-    integer, intent(in) :: layer_index
+    integer, intent(in) :: layer
     real(kind=8), intent(in), dimension(2) :: h_l, h_r, hu_l, hu_r, hv_l, hv_r
     real(kind=8), intent(in) :: b_l, b_r
 
@@ -834,14 +834,14 @@ subroutine solve_single_layer_rp(layer_index, h_l, h_r, hu_l, hu_r, hv_l, hv_r, 
     ! TODO - fix this limitation 
     real(kind=8), parameter :: rho = 1025.d0
 
-    drytol = dry_tolerance(layer_index)
+    drytol = dry_tolerance(layer)
 
-    hL = h_l(layer_index)
-    hR = h_r(layer_index)
-    huL = hu_l(layer_index)
-    huR = hu_r(layer_index)
-    hvL = hv_l(layer_index)
-    hvR = hv_r(layer_index)
+    hL = h_l(layer)
+    hR = h_r(layer)
+    huL = hu_l(layer)
+    huR = hu_r(layer)
+    hvL = hv_l(layer)
+    hvR = hv_r(layer)
     bL = b_l
     bR = b_r
     pL = 0.d0

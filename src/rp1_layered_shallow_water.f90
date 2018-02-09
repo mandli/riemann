@@ -27,29 +27,30 @@ subroutine rp1(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
     ! Input arguments
     integer, intent(in) :: maxmx,meqn,mwaves,mbc,mx,maux
     
-    double precision, intent(in), dimension(meqn, 1-mbc:maxmx+mbc) :: ql,qr
-    double precision, intent(in), dimension(maux, 1-mbc:maxmx+mbc) :: auxl,auxr
+    real(kind=8), intent(in), dimension(meqn, 1-mbc:maxmx+mbc) :: ql,qr
+    real(kind=8), intent(in), dimension(maux, 1-mbc:maxmx+mbc) :: auxl,auxr
     
     ! Output arguments
-    double precision, intent(out) :: s(mwaves, 1-mbc:maxmx+mbc)
-    double precision, intent(out) :: fwave(meqn, mwaves, 1-mbc:maxmx+mbc)
-    double precision, intent(out), dimension(meqn, 1-mbc:maxmx+mbc) :: amdq,apdq
+    real(kind=8), intent(out) :: s(mwaves, 1-mbc:maxmx+mbc)
+    real(kind=8), intent(out) :: fwave(meqn, mwaves, 1-mbc:maxmx+mbc)
+    real(kind=8), intent(out), dimension(meqn, 1-mbc:maxmx+mbc) :: amdq,apdq
     
     ! Local storage
     integer :: i,j,m,mw
-    double precision :: eig_vec(4,4),delta(4),alpha(4),beta(4)
-    double precision, dimension(4) :: flux_l,flux_r
-    double precision, dimension(2) :: h_l,u_l,hu_l,h_r,u_r,hu_r,h_ave,u_ave
-    double precision :: b_l,b_r,gamma_l,gamma_r,tau,w_l,w_r
-    double precision :: wind_speed,lambda(4),eta_l(2),eta_r(2),h_hat_l(2),h_hat_r(2)
+    real(kind=8) :: eig_vec(4,4),delta(4),alpha(4),beta(4)
+    real(kind=8), dimension(4) :: flux_l,flux_r
+    real(kind=8), dimension(2) :: h_l,u_l,hu_l,h_r,u_r,hu_r,h_ave,u_ave
+    real(kind=8) :: b_l,b_r,gamma_l,gamma_r,tau,w_l,w_r
+    real(kind=8) :: wind_speed,lambda(4),eta_l(2),eta_r(2),h_hat_l(2),h_hat_r(2)
     logical :: dry_state_l(2), dry_state_r(2), inundation
     
     integer :: layer_index
-    double precision :: momentum_transfer(2),flux_transfer_r,flux_transfer_l
-    double precision :: inundation_height(2),lambda_l,lambda_r,lambda_hat
+    real(kind=8) :: momentum_transfer(2),flux_transfer_r,flux_transfer_l
+    real(kind=8) :: inundation_height(2),lambda_l,lambda_r,lambda_hat
 
     integer :: trans_wave(2-mbc:mx+mbc)
-    double precision :: wave_correction(2-mbc:mx+mbc)
+    real(kind=8) :: wave_correction(2-mbc:mx+mbc)
+    real(kind=8) :: u_hat(2), c_hat(2)
     
     logical :: stop_computation
 
@@ -70,8 +71,8 @@ subroutine rp1(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
     
 
     ! Common blocks
-    double precision :: rho(2),rho_air,g,r,one_minus_r
-    double precision :: dry_tolerance
+    real(kind=8) :: rho(2),rho_air,g,r,one_minus_r
+    real(kind=8) :: dry_tolerance
     integer :: eigen_method,inundation_method
     logical :: entropy_fix
     
@@ -157,11 +158,11 @@ subroutine rp1(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
         ! ====================================================================
         ! Calculate eigen-space values
         ! ====================================================================
-        
+
         ! ====================================================================
         ! Inundation cases
         if (dry_state_r(2).and.(.not.dry_state_l(2)).and.(h_l(2) + b_l > b_r)) then
-            ! print *,"Right inundation problem at i=",i
+            print *,"Right inundation problem at i=",i
             inundation = .true.
             if (inundation_method == 0) then
                 stop "Inundation not allowed."
@@ -169,7 +170,7 @@ subroutine rp1(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
                 ! Linear eigensystem
                 inundation_height = [h_r(1),0.d0]
                 call linear_eigen(h_l,inundation_height,u_l,u_r,b_l,b_r, &
-                              &     trans_wave(i),wave_correction(i),lambda,eig_vec)
+                                   trans_wave(i),wave_correction(i),lambda,eig_vec)
                 s(:,i) = lambda
                 
                 ! Corrective wave
@@ -186,23 +187,42 @@ subroutine rp1(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
                 inundation_height = [h_r(1),dry_tolerance]
                 h_r(2) = dry_tolerance
                 call linear_eigen(h_l,inundation_height,u_l,u_r,b_l,b_r, &
-                              &     trans_wave(i),wave_correction(i),lambda,eig_vec)
+                                   trans_wave(i),wave_correction(i),lambda,eig_vec)
                 s(:,i) = lambda
                 
 !                 s(4,i) = u_r(1) + sqrt(g*h_r(1))
 !                 eig_vec(:,4) = [1.d0,s(4,i),0.d0,0.d0]
             else if (inundation_method == 3) then
-                inundation_height = [h_r(1),dry_tolerance]
-                call velocity_eigen(h_l,inundation_height,u_l,u_r,b_l,b_r,lambda,eig_vec)
-                s(:,i) = lambda
+                ! inundation_height = [h_r(1), dry_tolerance]
+                inundation_height = [h_r(1), h_r(2)]
+                ! Roe-average
+                u_hat = (sqrt(h_l) * u_l + sqrt(h_r) * u_r) / (sqrt(h_l) + sqrt(h_r))
+                c_hat = sqrt(0.5d0 * g * (h_l + h_r))
+
+                ! inundation_height = []
+                ! inundation_velocity = []
+
+                call velocity_eigen(h_l,inundation_height,u_l,u_r,b_l,b_r,    &
+                                   trans_wave(i),wave_correction(i),lambda,eig_vec)
+                s(:, i) = lambda
+                s(3, i) = max(u_hat(2) + c_hat(2), lambda(3))
+                ! s(4, i) = max(u_hat(1) + c_hat(1), lambda(4))
                 
-                ! Correction for fast wave
-                s(4,i) = u_r(1) + sqrt(g*h_r(1))
-                eig_vec(:,4) = [1.d0,s(4,i),0.d0,0.d0]
+                ! ! Tried
+                ! ! Correction for fast wave
+                alpha(3) = ((s(3, i) - u_r(1))**2 - g * h_r(1)) / (g*h_r(1))
+                ! s(3, i) = u_l(2) + 2.d0 * sqrt(g * (1.d0 - r) * h_l(2))
+                ! s(4, i) = u_r(1) + sqrt(g * h_r(1))
+                eig_vec(:, 4) = [1.d0, s(4, i), 0.d0, 0.d0]
+                eig_vec(:, 3) = [1.d0, s(3, i), alpha(3), s(3, i) * alpha(3)]
+                ! ! eig_vec(:, 4) = [1.d0, s(4, i), alpha(4), s(4, i) * alpha(4)]
+                ! trans_wave(i) = 3
+                ! wave_correction(i) = 0.5d0
+
             else if (inundation_method == 4) then
                 inundation_height = [h_r(1),dry_tolerance]
                 call lapack_eigen(h_l,inundation_height,u_l,u_r,b_l,b_r, &
-                              &     trans_wave(i),wave_correction(i),lambda,eig_vec)
+                                   trans_wave(i),wave_correction(i),lambda,eig_vec)
                 s(:,i) = lambda
                 
                 ! Correction for the fast waves
@@ -211,7 +231,7 @@ subroutine rp1(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
             else if (inundation_method == 5) then
                 inundation_height = [h_r(1),0.d0]
                 call lapack_eigen(h_l,inundation_height,u_l,u_r,b_l,b_r, &
-                              &     trans_wave(i),wave_correction(i),lambda,eig_vec)
+                                   trans_wave(i),wave_correction(i),lambda,eig_vec)
                 s(:,i) = lambda                
             endif   
         else if (dry_state_l(2).and.(.not.dry_state_r(2)).and.(h_r(2) + b_r > b_l)) then
@@ -224,7 +244,7 @@ subroutine rp1(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
                 ! Linear eigensystem
                 inundation_height = [h_l(1),dry_tolerance]
                 call linear_eigen(inundation_height,h_r,u_l,u_r,b_l,b_r, &
-                              &     trans_wave(i),wave_correction(i),lambda,eig_vec)
+                                    trans_wave(i),wave_correction(i),lambda,eig_vec)
                 s(:,i) = lambda
 
                 ! Corrections to internal wave
@@ -239,7 +259,7 @@ subroutine rp1(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
                 ! Use linearized eigensystem
                 inundation_height = [h_l(1),dry_tolerance]
                 call linear_eigen(inundation_height,h_r,u_l,u_r,b_l,b_r, &
-                              &     trans_wave(i),wave_correction(i),lambda,eig_vec)
+                                    trans_wave(i),wave_correction(i),lambda,eig_vec)
                 s(:,i) = lambda
                             
                 ! Correction for the fast waves
@@ -249,7 +269,7 @@ subroutine rp1(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
                 ! Use velocity difference expansion eigensystems
                 inundation_height = [h_l(1),dry_tolerance]
                 call velocity_eigen(inundation_height,h_r,u_l,u_r,b_l,b_r, &
-                              &     trans_wave(i),wave_correction(i),lambda,eig_vec)
+                                    trans_wave(i),wave_correction(i),lambda,eig_vec)
                 s(:,i) = lambda                
         
                 ! Correction for the fast waves
@@ -259,7 +279,7 @@ subroutine rp1(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
                 ! LAPACK solver with corrective wave and small wet layer
                 inundation_height = [h_r(1),dry_tolerance]
                 call lapack_eigen(h_l,inundation_height,u_l,u_r,b_l,b_r, &
-                              &     trans_wave(i),wave_correction(i),lambda,eig_vec)
+                                    trans_wave(i),wave_correction(i),lambda,eig_vec)
                 s(:,i) = lambda
                             
                 ! Correction for the fast waves
@@ -269,7 +289,7 @@ subroutine rp1(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
                 ! Use the LAPACK solver with no correction
                 inundation_height = [h_l(1),0.d0]
                 call lapack_eigen(inundation_height,h_r,u_l,u_r,b_l,b_r, &
-                              &     trans_wave(i),wave_correction(i),lambda,eig_vec)
+                                    trans_wave(i),wave_correction(i),lambda,eig_vec)
                 s(:,i) = lambda
             endif        
           
@@ -279,25 +299,25 @@ subroutine rp1(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
             ! Wall dry state or completely wet case
             if (eigen_method == 1) then
                 call linear_eigen(h_hat_l,h_hat_r,u_l,u_r,b_l,b_r, &
-                              &     trans_wave(i),wave_correction(i),lambda,eig_vec)
+                                   trans_wave(i),wave_correction(i),lambda,eig_vec)
                 s(:,i) = lambda
             else if (eigen_method == 2) then
                 call linear_eigen(h_l,h_r,u_l,u_r,b_l,b_r, &
-                              &     trans_wave(i),wave_correction(i),lambda,eig_vec)
+                                   trans_wave(i),wave_correction(i),lambda,eig_vec)
                 s(:,i) = lambda
             else if (eigen_method == 3) then 
                 call velocity_eigen(h_l,h_r,u_l,u_r,b_l,b_r, &
-                              &     trans_wave(i),wave_correction(i),lambda,eig_vec)
+                                   trans_wave(i),wave_correction(i),lambda,eig_vec)
                 s(:,i) = lambda
             else if (eigen_method == 4) then
                 if (dry_state_r(2).and.(.not.dry_state_l(2)).or. &
                         dry_state_l(2).and.(.not.dry_state_r(2))) then
                     call linear_eigen(h_l,h_r,u_l,u_r,b_l,b_r, &
-                              &     trans_wave(i),wave_correction(i),lambda,eig_vec)
+                                   trans_wave(i),wave_correction(i),lambda,eig_vec)
                     s(:,i) = lambda
                 else
                     call lapack_eigen(h_l,h_r,u_l,u_r,b_l,b_r, &
-                              &     trans_wave(i),wave_correction(i),lambda,eig_vec)
+                                   trans_wave(i),wave_correction(i),lambda,eig_vec)
                     s(:,i) = lambda
                 endif
             else
@@ -382,7 +402,6 @@ subroutine rp1(maxmx,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,fwave,s,amdq,apdq)
     ! Calculate amdq and apdq
     ! No entropy fix requested
     if (.not.entropy_fix) then
-        stop_computation = .false.
         do i=2-mbc,mx+mbc
             do mw=1,mwaves
                 if (s(mw,i) > 0.d0) then
@@ -546,16 +565,21 @@ subroutine velocity_eigen(h_l,h_r,u_l,u_r,b_l,b_r,            &
     mult_depth_l = product(h_l)
     mult_depth_r = product(h_r)
 
-    s(1) = (h_l(1)*u_l(1)+h_l(2)*u_l(2)) / total_depth_l &
-          - sqrt(g*total_depth_l)
-    s(2) = (h_l(2)*u_l(1)+h_l(1)*u_l(2)) / total_depth_l &
-          - sqrt(g*one_minus_r*mult_depth_l/total_depth_l &
-          * (1-(u_l(1)-u_l(2))**2/(g*one_minus_r*total_depth_l)))
-    s(3) = (h_r(2)*u_r(1)+h_r(1)*u_r(2)) / total_depth_r &
-          + sqrt(g*one_minus_r*mult_depth_r/total_depth_r &
-          * (1-(u_r(1)-u_r(2))**2/(g*one_minus_r*total_depth_r)))
-    s(4) = (h_r(1)*u_r(1)+h_r(2)*u_r(2)) / total_depth_r &
-            + sqrt(g*total_depth_r)
+    ! print *, total_depth_r
+    ! print *, (h_r(2)*u_r(1)+h_r(1)*u_r(2))
+    ! print *, g * one_minus_r * mult_depth_r / total_depth_r
+    ! print *, (1.d0 - (u_r(1) - u_r(2))**2 / (g * one_minus_r * total_depth_r))
+
+    s(1) = (h_l(1) * u_l(1) + h_l(2) * u_l(2)) / total_depth_l -               &
+                sqrt(g * total_depth_l)
+    s(2) = (h_l(2) * u_l(1) + h_l(1) * u_l(2)) / total_depth_l -               &
+                sqrt(g * one_minus_r * mult_depth_l / total_depth_l *          &
+                     (1.d0 - (u_l(1) - u_l(2))**2 / (g * one_minus_r * total_depth_l)))
+    s(3) = (h_r(2) * u_r(1) + h_r(1) * u_r(2)) / total_depth_r +               &
+                sqrt(g * one_minus_r * mult_depth_r / total_depth_r *          &
+                     (1.d0 - (u_r(1) - u_r(2))**2 / (g * one_minus_r * total_depth_r)))
+    s(4) = (h_r(1) * u_r(1) + h_r(2) * u_r(2)) / total_depth_r +               &
+                sqrt(g * total_depth_r)
 
     ! Determine wave speeds
     transonic_wave = 0

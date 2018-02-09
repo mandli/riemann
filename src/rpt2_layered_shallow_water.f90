@@ -34,7 +34,7 @@ subroutine rpt2(ixy,imp,maxm,meqn,mwaves,maux,mbc,mx,ql,qr,aux1,aux2,aux3,asdq,b
 
     use multilayer_module, only: num_layers, eigen_method, inundation_method
     use multilayer_module, only: eigen_func, inundation_eigen_func
-    use multilayer_module, only: dry_tolerance, aux_layer_index
+    use multilayer_module, only: dry_tolerance, layer_index
 
     implicit none
 
@@ -61,7 +61,7 @@ subroutine rpt2(ixy,imp,maxm,meqn,mwaves,maux,mbc,mx,ql,qr,aux1,aux2,aux3,asdq,b
     
     double precision :: ts(6),teig_vec(6,6)
     
-    integer :: layer_index
+    integer :: layer
     logical :: dry_state_l(2),dry_state_r(2)
     double precision :: h(2),hu(2),hv(2),u(2),v(2),h_hat(2),gamma
     double precision :: alpha(4)
@@ -89,30 +89,30 @@ subroutine rpt2(ixy,imp,maxm,meqn,mwaves,maux,mbc,mx,ql,qr,aux1,aux2,aux3,asdq,b
     do i=2-mbc,mx+mbc        
         ! Parse states and pick out important states
         do j=1,2
-            layer_index = 3*(j-1)
+            layer = 3*(j-1)
             ! Solving in the left grid cell (A^-\Delta Q)
             if (imp == 1) then
-                h(j) = qr(layer_index + 1,i-1) / rho(j)
-                hu(j) = qr(layer_index + n_index,i-1) / rho(j)
-                hv(j) = qr(layer_index + t_index,i-1) / rho(j)
+                h(j) = qr(layer + 1,i-1) / rho(j)
+                hu(j) = qr(layer + n_index,i-1) / rho(j)
+                hv(j) = qr(layer + t_index,i-1) / rho(j)
                 
                 b(3) = aux3(1,i-1)
                 b(2) = aux2(1,i-1)
                 b(1) = aux1(1,i-1)
                 
-                h_hat(1) = aux2(aux_layer_index,i-1)
-                h_hat(2) = aux2(aux_layer_index+1,i-1)
+                h_hat(1) = aux2(layer_index,i-1)
+                h_hat(2) = aux2(layer_index+1,i-1)
             ! Solving in the right grid cell (A^+ \Delta Q)
             else
-                h(j) = ql(layer_index + 1,i) / rho(j)
-                hu(j) = ql(layer_index + n_index,i) / rho(j)
-                hv(j) = ql(layer_index + t_index,i) / rho(j)
+                h(j) = ql(layer + 1,i) / rho(j)
+                hu(j) = ql(layer + n_index,i) / rho(j)
+                hv(j) = ql(layer + t_index,i) / rho(j)
                 
                 b(3) = aux3(1,i)
                 b(2) = aux2(1,i)
                 b(1) = aux1(1,i)
                 
-                h_hat = aux2(aux_layer_index:aux_layer_index+1,i)
+                h_hat = aux2(layer_index:layer_index+1,i)
             endif
                 
             if (h(j) < dry_tolerance(j)) then
