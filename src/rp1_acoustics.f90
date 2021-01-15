@@ -29,54 +29,52 @@ subroutine rp1(maxm,meqn,mwaves,maux,mbc,mx,ql,qr,auxl,auxr,wave,s,amdq,apdq)
 ! From the basic clawpack routines, this routine is called with ql = qr
 
 
-    implicit double precision (a-h,o-z)
+    implicit none
 
-    dimension wave(meqn, mwaves, 1-mbc:maxm+mbc)
-    dimension    s(mwaves,1-mbc:maxm+mbc)
-    dimension   ql(meqn, 1-mbc:maxm+mbc)
-    dimension   qr(meqn, 1-mbc:maxm+mbc)
-    dimension apdq(meqn, 1-mbc:maxm+mbc)
-    dimension amdq(meqn, 1-mbc:maxm+mbc)
+    ! Input/Output
+    integer, intent(in) :: maxm, meqn, mwaves, maux, mbc, mx
+    real(kind=8), intent(inout) :: wave(meqn, mwaves, 1-mbc:maxm+mbc)
+    real(kind=8), intent(inout) :: s(mwaves,1-mbc:maxm+mbc)
+    real(kind=8), intent(inout) :: ql(meqn, 1-mbc:maxm+mbc)
+    real(kind=8), intent(inout) :: qr(meqn, 1-mbc:maxm+mbc)
+    real(kind=8), intent(inout) :: auxl(maux, 1-mbc:maxm+mbc)
+    real(kind=8), intent(inout) :: auxr(maux, 1-mbc:maxm+mbc)
+    real(kind=8), intent(inout) :: apdq(meqn, 1-mbc:maxm+mbc)
+    real(kind=8), intent(inout) :: amdq(meqn, 1-mbc:maxm+mbc)
 
-!     local arrays
-!     ------------
-    dimension delta(2)
+    ! Local Storage
+    integer :: i
+    real(kind=8) :: delta(2), alpha(2)
 
-!     # density, bulk modulus, and sound speed, and impedence of medium:
-!     # (should be set in setprob.f)
-    common /cparam/ rho,bulk,cc,zz
+    ! Common block Storage
+    real(kind=8) :: rho, bulk, cc, zz
+
+    ! density, bulk modulus, and sound speed, and impedence of medium:
+    ! (should be set in setprob.f)
+    common /cparam/ rho, bulk, cc, zz
 
 
-!     # split the jump in q at each interface into waves
+    ! split the jump in q at each interface into waves
+    ! find alpha(1) and alpha(2), the coefficients of the 2 eigenvectors:
+    do i = 2-mbc, mx+mbc
+        delta = ql(:, i) - qr(:, i - 1)
 
-!     # find a1 and a2, the coefficients of the 2 eigenvectors:
-    do 20 i = 2-mbc, mx+mbc
-        delta(1) = ql(1,i) - qr(1,i-1)
-        delta(2) = ql(2,i) - qr(2,i-1)
-        a1 = (-delta(1) + zz*delta(2)) / (2.d0*zz)
-        a2 =  (delta(1) + zz*delta(2)) / (2.d0*zz)
+        alpha = [(-delta(1) + zz * delta(2)) / (2.0d0 * zz), &
+                 ( delta(1) + zz * delta(2)) / (2.d0 * zz) ]
     
-    !        # Compute the waves.
-    
-        wave(1,1,i) = -a1*zz
-        wave(2,1,i) = a1
-        s(1,i) = -cc
-    
-        wave(1,2,i) = a2*zz
-        wave(2,2,i) = a2
-        s(2,i) = cc
-    
-    20 END DO
+        ! Compute the waves - alpha * eigenvector
+        wave(:, 1, i) = alpha(1) * [-zz, 1.d0]
+        s(1, i) = -cc
 
+        wave(:, 2, i) = alpha(2) * [zz, 1.d0]
+        s(2, i) = cc
+    end do
 
-!     # compute the leftgoing and rightgoing flux differences:
-!     # Note s(1,i) < 0   and   s(2,i) > 0.
+    ! Compute the left and right going fluctuations
+    ! Note that in this case s(1) <= 0 and s(2) >= 0 always
+    do i = 2 - mbc, mx + mbc
+        amdq(:, i) = s(1, i) * wave(:, 1, i)
+        apdq(:, i) = s(2, i) * wave(:, 2, i)
+    end do
 
-    do 220 m=1,meqn
-        do 220 i = 2-mbc, mx+mbc
-            amdq(m,i) = s(1,i)*wave(m,1,i)
-            apdq(m,i) = s(2,i)*wave(m,2,i)
-    220 END DO
-
-    return
-    end subroutine rp1
+end subroutine rp1
